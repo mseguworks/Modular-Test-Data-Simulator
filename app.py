@@ -1,62 +1,55 @@
 import streamlit as st
 import pandas as pd
+import random
+import time
+import numexpr as ne
+
+# Define the Smoking Scenario rules and parameters
+rule_templates = [
+    {"name": "Near Side Notional Threshold", "condition": "BaseCcyQty >= 5000000", "configurable": "5000000"},
+    {"name": "Far Side Notional Threshold", "condition": "BaseCcyQty <= 5000000", "configurable": "5000000"},
+    {"name": "Open Order Lookup Window", "condition": "timestamp.diff().fillna(0) < 45", "configurable": "45"},
+    {"name": "Market Depth Lookup Window", "condition": "timestamp.diff().fillna(0) < 45", "configurable": "45"},
+    {"name": "Price Comparison Depth Level", "condition": "price >= best_bid", "configurable": "1"},
+    {"name": "Trade Inclusion Flag", "condition": "trade_inclusion == True", "configurable": "True"},
+    {"name": "Alert Severity", "condition": "severity == 'Medium'", "configurable": "Medium"}
+]
+
+# Import functions
 from data_generator import generate_order_data
 from rule_engine import apply_rules
-import base64
-
-# Initialize session state
-if 'rules' not in st.session_state:
-    st.session_state.rules = []
-
-# Function to add a new rule
-def add_rule(name, condition):
-    st.session_state.rules.append({'name': name, 'condition': condition})
-
-# Function to delete a rule
-def delete_rule(index):
-    del st.session_state.rules[index]
 
 # Streamlit UI
-st.title('Market Abuse Scenario Simulator')
+st.title("Market Abuse Scenario Simulator")
 
-# Sidebar for configuration
-st.sidebar.header('Configuration')
-num_orders = st.sidebar.number_input('Number of Orders', min_value=1, value=1000)
-st.sidebar.write('---')
+# Sidebar for rule templates
+st.sidebar.subheader("Rule Templates")
+template_names = [template["name"] for template in rule_templates]
+selected_template = st.sidebar.selectbox("Choose a template", [""] + template_names)
 
-# Sidebar for rule management
-st.sidebar.header('Rules')
-with st.sidebar.form(key='add_rule_form'):
-    rule_name = st.text_input('Rule Name')
-    rule_condition = st.text_input('Rule Condition')
-    add_rule_button = st.form_submit_button('Add Rule')
-    if add_rule_button and rule_name and rule_condition:
-        add_rule(rule_name, rule_condition)
+if "rules" not in st.session_state:
+    st.session_state["rules"] = {}
 
-st.sidebar.write('---')
-for i, rule in enumerate(st.session_state.rules):
-    st.sidebar.write(f"**{rule['name']}**: {rule['condition']}")
-    if st.sidebar.button(f"Delete Rule {i+1}"):
-        delete_rule(i)
+if selected_template:
+    template = next(t for t in rule_templates if t["name"] == selected_template)
+    st.sidebar.write(f"Condition: {template['condition']}")
+    configurable_value = st.sidebar.text_input(f"Set {template['name']} value", value=template["configurable"])
+    st.session_state["rules"][template["name"]] = configurable_value
 
-# Generate order data
-data = generate_order_data(num_orders)
-st.write('## Generated Order Data')
+# Data generation intensity
+intensity = st.sidebar.slider("Data Generation Intensity", 0.0, 1.0, 0.3)
+
+# Generate and display data
+data = generate_order_data(intensity)
+st.write("Generated Order Data")
 st.dataframe(data)
 
-# Apply rules
-if st.session_state.rules:
-    data, errors = apply_rules(data, st.session_state.rules)
-    st.write('## Rule Application Results')
-    st.dataframe(data)
-    if errors:
-        st.write('## Errors')
-        for error in errors:
-            st.write(error)
+# Apply rules and display alerts
+alerts = apply_rules(data, rule_templates, st.session_state["rules"])
+st.write("Alerts")
+st.dataframe(alerts)
 
-# Export options
-st.write('## Export Data')
-csv = data.to_csv(index=False)
-b64 = base64.b64encode(csv.encode()).decode()
-href = f'<a href="data:file/csv;base64,{b64}" download="order_data.csv">Download CSV File</a>'
-st.markdown(href, unsafe_allow_html=True)
+# Save alerts to CSV
+if st.button("Export Alerts to CSV"):
+    alerts.to_csv("alerts.csv", index=False)
+    st.success("Alerts exported to alerts.csv")
