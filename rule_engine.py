@@ -1,12 +1,19 @@
 import pandas as pd
 import numexpr as ne
 
-def apply_rules(data, rules):
-    errors = []
+def apply_rules(df, rules, config):
+    alerts = []
     for rule in rules:
+        name = rule["name"]
+        condition = rule["condition"]
+        if name in config:
+            condition = condition.replace(str(rule["configurable"]), str(config[name]))
         try:
-            condition = rule['condition']
-            data[rule['name']] = ne.evaluate(condition, local_dict=data.to_dict('series'))
+            matched = ne.evaluate(condition, local_dict=df.to_dict(orient='series'))
+            alerts.append(df[matched])
         except Exception as e:
-            errors.append(f"Error applying rule {rule['name']}: {str(e)}")
-    return data, errors
+            print(f"Error applying rule {name}: {e}")
+    if alerts:
+        return pd.concat(alerts)
+    else:
+        return pd.DataFrame()
